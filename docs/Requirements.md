@@ -15,10 +15,11 @@ This document details the functional, non-functional, hardware, software, and de
 * **FR-1.3**: The topic selection must trigger the backend to prepare the specific vector database collection for retrieval.
 
 ### FR-2: Question Generation
-* **FR-2.1**: The system must query ChromaDB to retrieve relevant context (concepts, questions, rubrics) matching the selected topic.
+* **FR-2.1**: The system must query ChromaDB to retrieve relevant context (concepts, questions, rubrics) matching the selected topic from the single source file `backend/data/knowledge.md`.
 * **FR-2.2**: The retrieved context must be injected into a prompt template sent to the Gemini API.
 * **FR-2.3**: The Gemini API must generate exactly one interview question tailored to the topic and the retrieved guidelines.
-* **FR-2.4**: The system must enforce an exact length of **three questions** per interview session. Multi-turn conversational questions or configurable session lengths are not supported.
+* **FR-2.4**: **One-Question Length**: The system must enforce an exact length of **one question** per interview session. Multi-turn conversational questions or multiple question loops are not supported.
+* **FR-2.5**: **RAG Fallback**: If ChromaDB, local embeddings generation, or file access fails, the backend must fall back to a standard prompt-only Gemini generation using built-in system prompt guidelines.
 
 ### FR-3: Answer Submission
 * **FR-3.1**: The user must be provided with a multi-line answer textbox to submit their response on the Interview Page.
@@ -26,15 +27,16 @@ This document details the functional, non-functional, hardware, software, and de
 * **FR-3.3**: The system must display a loading indicator while the user's answer is being processed and evaluated.
 
 ### FR-4: AI Evaluation
-* **FR-4.1**: The backend must send the user's answer, the question, and retrieval context to the Gemini API for evaluation.
+* **FR-4.1**: The backend must send the user's answer, the question, and retrieval context (or use fallback prompt) to the Gemini API for evaluation.
 * **FR-4.2**: The evaluation response from Gemini must follow a structured JSON response containing:
   * **Score**: An integer between 0 and 100 representing the accuracy and quality of the response.
   * **Feedback**: A qualitative assessment highlighting what the user answered correctly.
   * **Improvement Suggestions**: Actionable points detailing missing concepts or soft-skill corrections.
+* **FR-4.3**: **Evaluation Fallback**: If RAG is unavailable, the Gemini evaluation must be computed using standard prompt-only guidelines.
 
 ### FR-5: Interview History
 * **FR-5.1**: Each interview session must be stored in the local SQLite database. The schema is restricted to exactly two tables: `InterviewSession` and `InterviewQuestion`. No extra tables are permitted.
-* **FR-5.2**: Each question asked, along with the user's response, score, feedback, and suggestions, must be stored in relation to the interview session.
+* **FR-5.2**: The generated question, along with the user's response, score, feedback, and suggestions, must be stored in relation to the interview session.
 * **FR-5.3**: Session details must be persistent and read-only once the session is marked as completed.
 
 ### FR-6: Dashboard
@@ -42,9 +44,9 @@ This document details the functional, non-functional, hardware, software, and de
 * **FR-6.2**: The information displayed on the dashboard for each session is strictly limited to:
   * **Topic**
   * **Date**
-  * **Average Score** (calculated from the three question scores)
+  * **Average Score** (which equals the single question score)
   * **Session Summary**
-* **FR-6.3**: Selecting a past session from the dashboard list must open a detailed history view showing every question, answer, score, and feedback item from that session.
+* **FR-6.3**: Selecting a past session from the dashboard list must open a detailed history view showing the question, answer, score, feedback, and improvement suggestions from that session.
 * **FR-6.4**: Advanced analytics, graphs, visual charts, and statistics are explicitly out of scope.
 
 ---
@@ -63,21 +65,22 @@ This document details the functional, non-functional, hardware, software, and de
 * **NFR-2.3**: React components must be modular, separating logical state hooks from visual representation.
 
 ### NFR-3: Scalability
-* **NFR-3.1**: The schema must support adding new topics simply by adding a new Markdown source file to ChromaDB and a configuration enum, without altering the database schema or core engine.
-* **NFR-3.2**: Vector database collections must be isolated per topic to ensure retrieval operations remain fast as context data grows.
+* **NFR-3.1**: The system must support modifying questions and concepts simply by editing the single local Markdown file `backend/data/knowledge.md`, without altering the database schema or core engine.
+* **NFR-3.2**: Vector database collection names must correspond to the topics (`python`, `dsa`, `hr`) to ensure clean isolation of the retrieved chunks.
 
 ### NFR-4: Usability (Simplified UI)
 * **NFR-4.1**: The UI is simplified to contain exactly four pages:
   * **Home Page**
   * **Topic Selection**
-  * **Interview Page** (includes: Current Question, Multi-line Answer Textbox, Submit Button, Score, Feedback, Next Question Button)
+  * **Interview Page** (includes: Current Question, Multi-line Answer Textbox, Submit Button, Score, Feedback, Complete Session Button)
   * **Dashboard** (list of previous sessions)
 * **NFR-4.2**: The frontend will use standard responsive web design using Tailwind utility classes.
 * **NFR-4.3**: Complex visual elements, including split panes, code syntax highlighting, markdown parsing, typing animations, chat layouts, and advanced UI effects, are **completely excluded** to keep the project clean and achievable.
 
-### NFR-5: Reliability
+### NFR-5: Reliability & Fallbacks
 * **NFR-5.1**: In case of a Gemini API outage, the backend must fail gracefully, returning a descriptive error to the client instead of crashing.
-* **NFR-5.2**: The local database write operations must use transaction blocks to prevent partial or corrupted session logs.
+* **NFR-5.2**: If the RAG file or database is corrupted or missing, the system must log the warning and execute a standard prompt-only generation.
+* **NFR-5.3**: The local database write operations must use transaction blocks to prevent partial or corrupted session logs.
 
 ---
 
@@ -122,7 +125,7 @@ This document details the functional, non-functional, hardware, software, and de
 The backend must expose **only** the following six endpoints. No other endpoints should be added.
 
 * `POST /sessions`: Creates and starts a new interview session.
-* `POST /sessions/{session_id}/questions`: Generates the next question using RAG and Gemini.
+* `POST /sessions/{session_id}/questions`: Generates the single question using RAG (or prompt fallback) and Gemini.
 * `POST /questions/{question_id}/answer`: Submits the user's answer for evaluation and returns the score, feedback, and improvement suggestions.
 * `POST /sessions/{session_id}/complete`: Calculates the overall score, generates the session summary, and marks the session complete.
 * `GET /sessions`: Lists previous interview sessions (for Dashboard display).

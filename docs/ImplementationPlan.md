@@ -1,74 +1,76 @@
 # Implementation Plan: AI Interview Coach
 
-This implementation plan details the task breakdown, estimated timeline, and specific deliverables required to build the AI Interview Coach MVP within a **2 to 3-day development window**.
+This implementation plan details the task breakdown, estimated timeline, and specific deliverables required to build the AI Interview Coach MVP.
 
 ---
 
 ## Phase 1: Project Foundation
-**Focus**: Establish project directories, configure core dependencies, design and provision the database schema, and implement basic endpoints.
+**Focus**: Establish project directories, configure core dependencies, design the SQLite database schema using SQLModel, set up the Gemini API client configuration, and implement basic endpoints. (ChromaDB and local embeddings setup are deferred to Phase 2).
 
 ### Tasks
 1. **Repository & Directory Structure Initialization**:
    * Set up `/backend` and `/frontend` directories.
-   * Initialize a Python virtual environment and clean up `requirements.txt`.
+   * Initialize a Python virtual environment and set up `requirements.txt`.
 2. **SQLite Database Configuration via SQLModel**:
-   * Implement `app/database.py` with SQLAlchemy connection pools.
-   * Write database models (`InterviewSession` and `InterviewQuestion`) in `app/models.py`.
-   * Create script commands to automatically create tables.
-3. **ChromaDB and Local Embeddings Setup**:
-   * Configure persistent local directory storage for ChromaDB.
-   * Download and cache the `all-MiniLM-L6-v2` Sentence Transformers model.
-   * Set up collection ingestion scripts for loading markdown files from `/data/knowledge/` on server startup.
-4. **Basic API Construction**:
-   * Implement main FastAPI entry point (`app/main.py`) with CORS middleware configured for frontend communication.
-   * Write health-check and basic routing templates (`/api/sessions`, `/api/sessions/{session_id}`).
-5. **Configuration Management**:
+   * Implement `app/database.py` with SQLite connection settings.
+   * Write database models (`InterviewSession` and `InterviewQuestion` only) in `app/models.py`.
+   * Create database tables on startup.
+3. **Gemini Configuration**:
    * Configure `pydantic-settings` to load the Gemini API key from `.env` files.
+   * Initialize the official `google-genai` SDK client wrapper in `app/services/gemini.py`.
+4. **Basic API Construction**:
+   * Setup FastAPI entry point (`app/main.py`) with CORS middleware.
+   * Implement mock controllers for the base routing endpoints: `/sessions`, `/sessions/{id}/questions`, `/questions/{id}/answer`, `/sessions/{id}/complete`, `/sessions`, `/sessions/{id}`.
 
 ### Deliverables
-* Fully functional SQLite database file with initialized schemas.
-* Working vector store containing ingested topic collection folders.
-* Functional health-check endpoint and FastAPI documentation page accessible at `http://127.0.0.1:8000/docs`.
-
-### Estimated Timeline
-* **Duration**: 0.5 to 1 Day.
-* **Timeline Breakout**:
-  * Environment & Database setup: 3 hours.
-  * ChromaDB ingestion logic: 3 hours.
-  * Basic APIs and Config: 2 hours.
-
----
-
-## Phase 2: Interview Engine
-**Focus**: Construct the RAG retrieval pipeline, implement the Gemini API client wrapper with structured JSON outputs, and engineer the interview orchestration loop.
-
-### Tasks
-1. **RAG Retrieval Engine**:
-   * Write `app/services/rag.py` to embed incoming queries and query relevant collections.
-   * Refine similarity threshold parameters to filter out irrelevant database matches.
-2. **Gemini Client Service Integration**:
-   * Implement `app/services/gemini.py` using the official `google-genai` SDK.
-   * Write robust, custom system prompts for Python, DSA, and HR interview contexts.
-   * Implement Gemini Structured Outputs by passing a Pydantic schema for evaluation responses to guarantee JSON validity.
-3. **API Logic Orchestration**:
-   * Define `/api/sessions/{session_id}/questions` endpoint logic: RAG query -> Gemini prompt -> SQL save -> response.
-   * Define `/api/questions/{question_id}/answer` evaluation endpoint logic: Receive answer -> fetch context -> run Gemini evaluation -> save results -> return response.
-   * Define `/api/sessions/{session_id}/complete` endpoint to average scores, summarize overall candidate performance, and close the session.
-4. **Error Handling & Fallbacks**:
-   * Add middleware exceptions to catch Gemini API rate-limiting or service-unavailable errors, falling back to cached default questions.
-
-### Deliverables
-* Robust vector-retrieval module.
-* Clean Gemini API client utility with structured Pydantic return values.
-* Orchestrated API routes capable of generating questions and scoring submissions.
+* **Backend Setup**: FastAPI app skeleton running locally.
+* **SQLite Setup & SQLModel Models**: Initialized SQLite database file containing only two tables (`InterviewSession` and `InterviewQuestion`).
+* **Gemini Configuration**: Environment-based API key validation.
+* **Basic APIs**: Exposed skeleton endpoints.
+* **Project Structure**: Clean folder structure for backend and frontend.
 
 ### Estimated Timeline
 * **Duration**: 1 Day.
-* **Timeline Breakout**:
-  * Vector store querying and embedding hooks: 2 hours.
-  * Prompt engineering & structured Gemini integration: 4 hours.
-  * API route business logic & relational database transactions: 3 hours.
-  * Graceful fallback & error validation: 1 hour.
+
+---
+
+## Phase 2: Interview Engine (Prompt-First Development)
+**Focus**: Develop a fully functioning mock interview using Gemini prompt instructions first, and then integrate the local RAG engine using a single markdown file as a secondary integration step.
+
+### Sub-Phase 2A: Plain Prompt-Only Engine
+1. **Gemini Question Generation**:
+   * Write custom system prompts for Python, DSA, and HR interview topics in `app/services/gemini.py`.
+   * Implement generation route `/sessions/{session_id}/questions` to retrieve a single question using only the LLM prompt.
+2. **Answer Evaluation & Score/Feedback Generation**:
+   * Setup Gemini Structured Outputs to return a JSON containing score, feedback, and improvement suggestions.
+   * Implement route `/questions/{question_id}/answer` to score the response and save it.
+3. **Session Persistence & History**:
+   * Implement `/sessions/{session_id}/complete` to calculate the final score and save the overall summary.
+4. **Validation**:
+   * Run and test the complete mock flow (Question -> Answer -> Grade -> Complete) using standard LLM prompting.
+
+### Sub-Phase 2B: Simple RAG Integration
+1. **Knowledge Resource Setup**:
+   * Create a single local Markdown file `backend/data/knowledge.md` containing core interview concepts, sample questions, and evaluation rubrics.
+2. **ChromaDB and Local Embeddings Setup**:
+   * Configure persistent local directory storage for ChromaDB.
+   * Configure the local `all-MiniLM-L6-v2` Sentence Transformers model.
+   * Implement startup ingestion to read `backend/data/knowledge.md`, apply fixed chunking, generate embeddings, and load into topic collections.
+3. **RAG Retrieval & Prompt Injection**:
+   * Write `app/services/rag.py` to perform top-k lookup matching the selected topic.
+   * Inject the retrieved context into the Gemini prompt template.
+4. **Prompt Fallback Implementation**:
+   * Implement exception handlers so that if ChromaDB or the retrieval module encounters an error, the system falls back to the prompt-only generation developed in Sub-Phase 2A.
+
+### Deliverables
+* **Topic Selection & Question Generation**: Prompt-only base workflow, followed by context-aware generation.
+* **Answer Evaluation, Score, & Feedback Generation**: Reliable grading via Gemini Structured JSON output.
+* **Save Interview History**: SQLite CRUD operations.
+* **Final Interview Summary**: Complete endpoint calculating session results.
+* **RAG Retrieval**: local document ingestion, embedding indexing, top-k retrieval, and fallback logic using standard LLM prompting.
+
+### Estimated Timeline
+* **Duration**: 1 Day (0.5 Day for Prompt-Only, 0.5 Day for RAG Integration).
 
 ---
 
@@ -77,50 +79,24 @@ This implementation plan details the task breakdown, estimated timeline, and spe
 
 ### Tasks
 1. **React Application Scaffolding**:
-   * Bootstrapping the frontend workspace (`npx -y create-vite-app`).
-   * Design CSS foundation system in `src/index.css` defining color themes and standard typography.
-2. **Dashboard UI Development**:
-   * Build the Home page allowing topic selection (Python, DSA, HR).
-   * Create the metrics grid (sessions completed, average scores).
-   * Build the historic sessions list table with toggleable detail drawers.
-3. **Interview Chat UI Componentry**:
-   * Implement : Interview Page
-      • Current Question
-      • Multi-line Answer Box
-      • Submit Button
-      • Score
-      • Feedback
-      • Next Question Button
-   * Create interactive message bubbles with markdown renderings for code snippet outputs.
-   * Add typing-indicator skeletons and disabled states during API payload transitions.
-4. **Axios Client Mapping**:
-   * Define Axios configuration and create services mapping backend paths.
-5. **E2E Testing & Bug Fixes**:
-   * Test full candidate user flow: Select topic -> Answer 3 questions -> Complete session -> View on dashboard.
-   * Resolve state bugs, connection issues, or CORS errors.
+   * Bootstrap frontend using a Vite template.
+   * Set up Tailwind utility styling.
+2. **UI Page Layouts**:
+   * Build **Home Page**: Welcome screen.
+   * Build **Topic Selection Page**: Select Python, DSA, or HR.
+   * Build **Interview Page**: UI containing the Current Question, a Multi-line Answer Textbox, a Submit Button, Score, Feedback, and a Complete Session Button.
+   * Build **Dashboard Page**: Plain tabular overview displaying Previous Sessions, Topic, Date, Average Score, and Session Summary.
+3. **API Integration via Axios**:
+   * Build Axios client mapping the exact six backend endpoints.
+4. **E2E Testing & Bug Fixes**:
+   * Verify the 1-question workflow: Select topic -> Answer 1 question -> See feedback -> Complete session -> View dashboard.
+   * Ensure that backend RAG retrieval failures are caught and handled gracefully by the UI.
 
 ### Deliverables
-* Fully integrated, responsive React single-page application.
-* Fully styled chat interface, dashboard layout, and detailed history explorer.
-* Validated E2E mock session execution.
+* **React Frontend**: Clean, responsive SPA.
+* **Home Page, Topic Selection, Interview Page, & Dashboard**: Fully implemented views matching simplified UI specifications.
+* **API Integration**: Axios clients successfully communicating with backend routes.
+* **Testing & Bug Fixes**: Validated end-to-end user interview workflow.
 
 ### Estimated Timeline
 * **Duration**: 1 Day.
-* **Timeline Breakout**:
-  * React app bootstrap, styling config, and UI layout: 3 hours.
-  * Chat componentry and history logs: 3 hours.
-  * API integration and Axios hooks: 2 hours.
-  * Testing, styling adjustments, and bug fixes: 2 hours.
-
-## Project Success Criteria
-
-The project will be considered complete if:
-
-- Backend APIs are functional.
-- Gemini successfully generates interview questions.
-- RAG retrieves topic-specific context.
-- AI evaluates answers and returns score, feedback, and suggestions.
-- Interview history is stored in SQLite.
-- Dashboard displays previous interview sessions.
-- Frontend and backend integrate successfully.
-- The complete interview flow (3 questions) executes without errors.

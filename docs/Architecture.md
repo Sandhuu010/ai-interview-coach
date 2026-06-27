@@ -7,7 +7,9 @@ This document details the system architecture, component design, data flow, API 
 ## 1. System Overview
 The AI Interview Coach is designed as a lightweight, single-user client-server application. It decouples the presentation layer (**React Single Page Application**) from the core business logic layer (**FastAPI**), utilizing a local relational database (**SQLite**) and an in-process vector store (**ChromaDB**). 
 
-The external **Gemini API** handles natural language generation and response evaluation, while a local embedding model (**Sentence Transformers**) runs within the FastAPI process to convert study resources into vector embeddings.
+The external **Gemini API** handles natural language generation and response evaluation. A local embedding model (**Sentence Transformers**) runs within the FastAPI process to convert study resources into vector embeddings. 
+
+**Timeline & Fallback Compliance**: The implementation is phased, prioritizing a **prompt-only** question and evaluation workflow first. RAG is added as a secondary integration step. The RAG pipeline relies on exactly one local markdown file (`backend/data/knowledge.md`) with a built-in fallback: if RAG initialization or retrieval fails, the system executes standard prompt-only queries to Gemini.
 
 ---
 
@@ -37,11 +39,11 @@ graph TD
     subgraph Storage ["Local Storage"]
         SQLite_DB[("SQLite Database<br>(sessions.db: 2 Tables)")]
         Chroma_DB[("ChromaDB Vector Store<br>(vector_store/)")]
-        Markdown_Files["Markdown Raw Data<br>(3 Knowledge Files)"]
+        Markdown_File["Markdown Raw Data<br>(backend/data/knowledge.md)"]
         
         SQLModel_ORM --> SQLite_DB
         EmbeddingEngine -- "Read / Write Vectors" --> Chroma_DB
-        EmbeddingEngine -- "Ingest" --> Markdown_Files
+        EmbeddingEngine -- "Ingest" --> Markdown_File
     end
 
     subgraph External_AI ["External Services"]
@@ -58,7 +60,7 @@ graph TD
 ---
 
 ## 3. Interview Flow Diagram
-The sequential workflow below represents the fixed lifecycle of a three-question interview:
+The sequential workflow below represents the simplified lifecycle of a one-question interview:
 
 ```mermaid
 sequenceDiagram
@@ -76,12 +78,14 @@ sequenceDiagram
     DB-->>API: Return session_id
     API-->>UI: Return session_id
 
-    Note over User, DB: Loop: Question 1, 2, and 3
-    
     UI->>API: POST /sessions/{session_id}/questions
-    API->>VDB: Query context for topic/keywords from RAG files
-    VDB-->>API: Return relevant text chunks
-    API->>LLM: Generate question (inject context + previous answers in session)
+    alt RAG Active
+        API->>VDB: Query context from knowledge.md for selected topic
+        VDB-->>API: Return top-k text chunks (concepts/rubrics)
+        API->>LLM: Generate question (inject context)
+    else RAG Failure / Deferral
+        API->>LLM: Standard Prompt-Only question generation (fallback)
+    end
     LLM-->>API: Return single question text
     API->>DB: Save question record (session_id, question_text)
     API-->>UI: Return question (question_id, question_text)
@@ -89,24 +93,26 @@ sequenceDiagram
     User->>UI: Type answer & click "Submit"
     UI->>API: POST /questions/{question_id}/answer (user_answer)
     API->>DB: Update question record with user_answer
-    API->>VDB: Query evaluation rubrics for the question
-    VDB-->>API: Return evaluation context
-    API->>LLM: Evaluate response (question + answer + rubric context)
+    alt RAG Active
+        API->>VDB: Query evaluation rubrics for the question
+        VDB-->>API: Return evaluation context
+        API->>LLM: Evaluate response (question + answer + rubric context)
+    else RAG Failure / Deferral
+        API->>LLM: Standard Prompt-Only response evaluation (fallback)
+    end
     LLM-->>API: Return JSON (score, feedback, improvement_suggestions)
     API->>DB: Save evaluation results (score, feedback, suggestions)
     API-->>UI: Return evaluation details
-    UI->>User: Display Score, Feedback, and "Next Question" Button
-    
-    Note over User, DB: End of Loop after 3 Questions
+    UI->>User: Display Score, Feedback, and "Complete Session" Button
 
-    User->>UI: Click "Complete Session" / Trigger auto-completion
+    User->>UI: Click "Complete Session"
     UI->>API: POST /sessions/{session_id}/complete
-    API->>DB: Fetch all 3 questions scores & calculate average
-    API->>LLM: Generate final session summary based on history
+    API->>DB: Fetch question score & set as overall_score
+    API->>LLM: Generate final session summary based on response
     LLM-->>API: Return brief session summary text
     API->>DB: Update Session record (overall_score, summary, is_completed=true)
     API-->>UI: Return completion status (overall_score, summary)
-    UI->>User: Navigate to Dashboard and display session summary
+    UI->>User: Navigate to Dashboard and display session list
 ```
 
 ---
@@ -117,16 +123,16 @@ sequenceDiagram
 * **Routing & Navigation**: Render exactly four pages:
   * **Home Page**: Initial entry point.
   * **Topic Selection**: Choose Python, DSA, or HR.
-  * **Interview Page**: Dynamic view containing the Current Question, a Multi-line Answer Textbox, a Submit Button, Score, Feedback, and a Next Question Button.
+  * **Interview Page**: View containing the Current Question, a Multi-line Answer Textbox, a Submit Button, Score, Feedback, and a Complete Session Button.
   * **Dashboard**: List of previous sessions showing Topic, Date, Average Score, and Session Summary.
-* **State Management**: Track the active session ID, the current question count (1 to 3), and form validation states.
+* **State Management**: Track the active session ID, input textbox strings, and UI transitions.
 * **UI Polish**: Standard clean layout using Tailwind CSS. 
 * **Out-of-Scope (Excluded)**: No split panes, code syntax highlighting, markdown parsing, typing animations, complex chat structures, or advanced UI effects.
 
 ### Backend Responsibilities
 * **Routing & Controllers**: Expose exactly six RESTful endpoints for sessions, questions, evaluations, and history.
-* **RAG Retrieval**: Embed queries locally and query ChromaDB for contextual guidelines.
-* **LLM Prompts & Orchestrator**: Package context, session history, and prompt templates, communicating with Gemini API via the official Python SDK.
+* **RAG Retrieval & Fallback**: Extract context locally from ChromaDB collections corresponding to `backend/data/knowledge.md`. Provide automatic fallback handling.
+* **LLM Prompts & Orchestrator**: Manage prompt templates, communicating with Gemini API via the official Python SDK.
 * **Data Persistence**: Map relational schemas to SQLite using SQLModel.
 * **Data Validation**: Enforce typing constraints on incoming payloads and outgoing responses using Pydantic.
 
@@ -144,19 +150,18 @@ sequenceDiagram
 
 ---
 
-## 6. RAG Architecture
-To ensure questions and evaluations remain accurate, the application leverages Retrieval-Augmented Generation:
+## 6. RAG Architecture & Ingestion
+To keep the retrieval pipeline lightweight and easy to maintain:
 
-1. **Ingestion Phase**: 
-   * Ingestion is restricted to exactly three files containing interview concepts, sample questions, and evaluation rubrics:
-     * `backend/data/knowledge/python.md`
-     * `backend/data/knowledge/dsa.md`
-     * `backend/data/knowledge/hr.md`
-   * On startup, the backend parses these files, splits them into logical chunks (e.g., by headers or 800-character windows), and generates vector embeddings using `SentenceTransformer('all-MiniLM-L6-v2')`.
-   * Chunks and embeddings are stored in ChromaDB collections named after their topics: `collection_python`, `collection_dsa`, and `collection_hr`.
-2. **Retrieval Phase**:
-   * When generating a question, a random keyword or prior question topic is embedded, and a similarity search returns the top 2-3 most relevant curriculum chunks.
-   * During evaluation, the prompt injects the specific question guidelines retrieved from ChromaDB, forcing Gemini to evaluate the user's code/text against standard solutions and grading expectations.
+1. **Exact Knowledge Source**: Ingestion is restricted to exactly **one local Markdown file**:
+   * `backend/data/knowledge.md`
+   * This file holds distinct sections for Python, DSA, and HR interview concepts, questions, and evaluation guidelines.
+2. **Ingestion & Embedding**: 
+   * On startup, the backend reads this file, splits it into fixed-size chunks (e.g., using Markdown headers or fixed character windows), and generates vector embeddings locally using the cached `SentenceTransformer('all-MiniLM-L6-v2')`.
+   * The vectors are indexed inside ChromaDB.
+3. **Retrieval & Fallback**:
+   * Similarity search maps the selected topic name to the indexed chunks to extract relevant questions and grading guidelines (top-k lookup).
+   * **Graceful Fallback**: If ChromaDB initialization fails, file access fails, or embeddings generation encounters an error, the orchestrator logs the issue and executes standard prompt-only question generation and response grading.
 
 ---
 
@@ -192,7 +197,7 @@ erDiagram
 * `id` (`int`, Primary Key): Unique identifier of the session.
 * `topic` (`str`): The category selected (`python`, `dsa`, or `hr`).
 * `created_at` (`datetime`): Timestamp of initialization.
-* `overall_score` (`float`, Nullable): Calculated average of the exactly 3 graded questions.
+* `overall_score` (`float`, Nullable): Calculated score based on the single question score.
 * `summary` (`str`, Nullable): Brief summary of performance.
 * `is_completed` (`bool`): Flag to mark the session as concluded.
 
@@ -231,7 +236,7 @@ erDiagram
   }
   ```
 
-#### 2. Generate Next Question
+#### 2. Generate Question
 * **HTTP Method**: `POST`
 * **Path**: `/sessions/{session_id}/questions`
 * **Response Payload (200 OK)**:
@@ -257,7 +262,7 @@ erDiagram
   {
     "id": 12,
     "session_id": 1,
-    "question_text": "Explain the difference between a list and a tuple in Python...",
+    "question_text": "Explain the difference between a list and a tuple...",
     "user_answer": "Lists are mutable...",
     "score": 90,
     "feedback": "The explanation is correct. The mutable vs. immutable distinction is clearly defined.",
@@ -273,7 +278,7 @@ erDiagram
   {
     "id": 1,
     "overall_score": 90.0,
-    "summary": "Completed successfully. Solid understanding of Python structures, but could improve on memory utilization concepts.",
+    "summary": "Completed successfully. Solid understanding of Python structures.",
     "is_completed": true
   }
   ```
@@ -289,7 +294,7 @@ erDiagram
       "topic": "Python",
       "created_at": "2026-06-26T20:50:00Z",
       "overall_score": 90.0,
-      "summary": "Completed successfully. Solid understanding...",
+      "summary": "Completed successfully...",
       "is_completed": true
     }
   ]
@@ -321,65 +326,6 @@ erDiagram
   ```
 
 ---
-## API Flow
-
-React UI
-
-↓
-
-POST /sessions
-
-↓
-
-Session Created
-
-↓
-
-POST /sessions/{id}/questions
-
-↓
-
-RAG retrieves context
-
-↓
-
-Gemini generates question
-
-↓
-
-Question displayed
-
-↓
-
-POST /questions/{id}/answer
-
-↓
-
-Gemini evaluates answer
-
-↓
-
-Score + Feedback returned
-
-↓
-
-Repeat until 3 questions
-
-↓
-
-POST /sessions/{id}/complete
-
-↓
-
-Overall Score + Summary
-
-↓
-
-GET /sessions
-
-↓
-
-Dashboard
 
 ## 9. Project Directory Structure
 The workspace will organize code into clear directories:
@@ -404,10 +350,7 @@ ai-interview-coach/
 │   │       └── rag.py           # ChromaDB & Embedding service
 │   │
 │   ├── data/
-│   │   ├── knowledge/           # RAG document library
-│   │   │   ├── python.md        # Python interview concepts & questions
-│   │   │   ├── dsa.md           # DSA interview concepts & questions
-│   │   │   └── hr.md            # HR interview concepts & questions
+│   │   ├── knowledge.md         # Exactly ONE knowledge Markdown file
 │   │   └── vector_store/        # ChromaDB SQLite/persist data
 │   │
 │   └── tests/                   # Backend tests
@@ -437,21 +380,3 @@ ai-interview-coach/
 ├── README.md                    # Setup and startup guide
 └── requirements.txt             # Python dependencies
 ```
-## Future Expansion
-
-The current project follows a modular architecture so that additional features
-can be added without changing the existing codebase.
-
-Possible future modules include:
-
-backend/
-    services/
-        resume_analysis.py
-        speech.py
-        analytics.py
-
-frontend/
-    pages/
-        ResumeAnalysis.jsx
-        Analytics.jsx
-        Settings.jsx
