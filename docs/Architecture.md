@@ -7,27 +7,67 @@ This document details the system architecture, component design, data flow, API 
 ## 1. System Overview
 The AI Interview Coach is a lightweight client-server web application consisting of a React frontend, a FastAPI backend, a local SQLite database, and the Gemini API. The frontend manages the user interface, the backend handles application logic, Gemini generates and evaluates interview content, and SQLite stores interview history.
 
-### High-Level Architecture Diagram
+### High-Level Architecture
 
-     User
-      │
-      ▼
-React Frontend
-      │
- REST API
-      │
-      ▼
-FastAPI Backend
-      │
- ├────────► Gemini API
- │
- └────────► SQLite
+```text
+                +----------------+
+                |      User      |
+                +----------------+
+                         |
+                         v
+                +----------------+
+                | React Frontend |
+                +----------------+
+                         |
+                    REST API
+                         |
+                         v
+                +----------------+
+                | FastAPI Backend|
+                +----------------+
+                  |            |
+                  |            |
+                  v            v
+          +-------------+  +-----------+
+          | Gemini API  |  |  SQLite   |
+          +-------------+  +-----------+
+```
 
-## 2. Interview Workflow
-The interview sequence is a straightforward, direct conversational flow:
+### Interview Workflow
 
-### Workflow Diagram
-![Interview Workflow](images/interview-workflow.png)
+```text
+Start
+  |
+  v
+Select Topic
+  |
+  v
+Create Interview Session
+  |
+  v
+Generate Question
+  |
+  v
+Display Question
+  |
+  v
+Submit Answer
+  |
+  v
+Evaluate Answer (Gemini)
+  |
+  v
+Return Score & Feedback
+  |
+  v
+Save Session
+  |
+  v
+Complete Session
+  |
+  v
+Dashboard
+```
 
 ### Simple Workflow Text Explanation
 This step-by-step description explains the actual flow of a candidate's session:
@@ -77,8 +117,32 @@ This step-by-step description explains the actual flow of a candidate's session:
 ## 5. Database Design (SQLite)
 The application utilizes SQLModel to construct **exactly** two relational tables in SQLite. No other tables may be added.
 
-### Database Schema Diagram
-![Database Schema](images/database-schema.png)
+### Database Schema
+
+```text
+InterviewSession
+----------------------------
+id (PK)
+topic
+created_at
+overall_score
+summary
+is_completed
+        |
+        | 1
+        |
+        | *
+InterviewQuestion
+----------------------------
+id (PK)
+session_id (FK)
+question_text
+user_answer
+score
+feedback
+improvement_suggestions
+timestamp
+```
 
 ### Table Schema Definitions
 

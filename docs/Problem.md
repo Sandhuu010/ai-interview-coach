@@ -38,7 +38,7 @@ The MVP will support only three specific interview topics:
 1. **Simplified Database**: Uses only two tables (`InterviewSession` and `InterviewQuestion`) in SQLite.
 2. **Single-Question Loop**: The interview session is cut to exactly **one question**. The workflow is: Select Topic -> Generate Question -> Submit Answer -> Get Feedback & Score -> Save & Complete -> Dashboard.
 3. **Simplified UI**: Consists of four basic pages (Home Page, Topic Selection, Interview Page, Dashboard) with clean layout components (no complex chat layouts, typing animations, split panes, or code highlights).
-4. **PPrompt-Based Interview Generation**: No vector database, embeddings, similarity search, chunking, or retrieval pipeline (RAG) is utilized. Question generation and evaluation are performed directly via the Gemini API.
+4. **Prompt-Based Interview Generation**: No vector database, embeddings, similarity search, chunking, or retrieval pipeline (RAG) is utilized. Question generation and evaluation are performed directly via the Gemini API.
 
 ### Explicit Out-of-Scope Features
 To prevent scope creep and overengineering, the following features are **explicitly excluded**:
