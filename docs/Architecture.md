@@ -5,191 +5,80 @@ This document details the system architecture, component design, data flow, API 
 ---
 
 ## 1. System Overview
-The AI Interview Coach is designed as a lightweight, single-user client-server application. It decouples the presentation layer (**React Single Page Application**) from the core business logic layer (**FastAPI**), utilizing a local relational database (**SQLite**) and an in-process vector store (**ChromaDB**). 
+The AI Interview Coach is a lightweight client-server web application consisting of a React frontend, a FastAPI backend, a local SQLite database, and the Gemini API. The frontend manages the user interface, the backend handles application logic, Gemini generates and evaluates interview content, and SQLite stores interview history.
 
-The external **Gemini API** handles natural language generation and response evaluation. A local embedding model (**Sentence Transformers**) runs within the FastAPI process to convert study resources into vector embeddings. 
+### High-Level Architecture Diagram
 
-**Timeline & Fallback Compliance**: The implementation is phased, prioritizing a **prompt-only** question and evaluation workflow first. RAG is added as a secondary integration step. The RAG pipeline relies on exactly one local markdown file (`backend/data/knowledge.md`) with a built-in fallback: if RAG initialization or retrieval fails, the system executes standard prompt-only queries to Gemini.
+     User
+      │
+      ▼
+React Frontend
+      │
+ REST API
+      │
+      ▼
+FastAPI Backend
+      │
+ ├────────► Gemini API
+ │
+ └────────► SQLite
 
----
+## 2. Interview Workflow
+The interview sequence is a straightforward, direct conversational flow:
 
-## 2. High-Level Architecture Diagram
-The diagram below illustrates the physical and logical boundaries of the application.
+### Workflow Diagram
+![Interview Workflow](images/interview-workflow.png)
 
-```mermaid
-graph TD
-    subgraph Client ["Client (Frontend Browser)"]
-        ReactApp["React SPA (4 Simple Pages)"]
-        AxiosClient["Axios HTTP Client"]
-        ReactApp --> AxiosClient
-    end
-
-    subgraph Server ["Server (FastAPI Process)"]
-        FastAPI_Router["FastAPI Router (6 Endpoints)"]
-        SQLModel_ORM["SQLModel (ORM / Data Validation)"]
-        EmbeddingEngine["Sentence Transformers Engine"]
-        RAG_Orchestrator["RAG & Prompt Orchestrator"]
-        
-        AxiosClient -- "REST API (HTTP/JSON)" --> FastAPI_Router
-        FastAPI_Router --> SQLModel_ORM
-        FastAPI_Router --> RAG_Orchestrator
-        RAG_Orchestrator --> EmbeddingEngine
-    end
-
-    subgraph Storage ["Local Storage"]
-        SQLite_DB[("SQLite Database<br>(sessions.db: 2 Tables)")]
-        Chroma_DB[("ChromaDB Vector Store<br>(vector_store/)")]
-        Markdown_File["Markdown Raw Data<br>(backend/data/knowledge.md)"]
-        
-        SQLModel_ORM --> SQLite_DB
-        EmbeddingEngine -- "Read / Write Vectors" --> Chroma_DB
-        EmbeddingEngine -- "Ingest" --> Markdown_File
-    end
-
-    subgraph External_AI ["External Services"]
-        GeminiAPI["Gemini API (gemini-2.5-flash)"]
-        RAG_Orchestrator -- "Google Gen AI SDK" --> GeminiAPI
-    end
-    
-    style Client fill:#f9f9f9,stroke:#333,stroke-width:2px
-    style Server fill:#e1f5fe,stroke:#03a9f4,stroke-width:2px
-    style Storage fill:#efebe9,stroke:#795548,stroke-width:2px
-    style External_AI fill:#ede7f6,stroke:#673ab7,stroke-width:2px
-```
+### Simple Workflow Text Explanation
+This step-by-step description explains the actual flow of a candidate's session:
+1. **Topic Selection**: The candidate visits the application, opens the Topic Selection screen, and selects a topic (Python, DSA, or HR). This calls `POST /sessions` to create a session record in SQLite.
+2. **Question Generation**: The UI transitions to the Interview screen and calls `POST /sessions/{session_id}/questions`. The backend formats a system prompt for the selected topic (using hardcoded constant strings defined in the backend code) and requests a single question from the Gemini API. The question is saved in SQLite and returned to the UI.
+3. **Answer Submission**: The candidate types their answer in a multi-line textbox and clicks "Submit". This triggers `POST /questions/{question_id}/answer`.
+4. **Answer Evaluation**: The backend sends the question and the user's answer to the Gemini API. Gemini evaluates the response and returns a structured output containing a score (0-100), feedback, and improvement suggestions. This evaluation data is saved to SQLite and displayed to the user.
+5. **Session Completion**: The candidate clicks "Complete Session", which calls `POST /sessions/{session_id}/complete`. The backend sets the question score as the overall score, requests a brief session summary from the Gemini API, marks the session as complete in the database, and returns the summary.
+6. **Dashboard Log**: The candidate is returned to the Dashboard page, which queries `GET /sessions` to list the completed interview session showing the topic, date, score, and summary.
 
 ---
 
-## 3. Interview Flow Diagram
-The sequential workflow below represents the simplified lifecycle of a one-question interview:
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor User as Candidate
-    participant UI as React UI
-    participant API as FastAPI Backend
-    participant VDB as ChromaDB (Vector DB)
-    participant LLM as Gemini API
-    participant DB as SQLite DB
-
-    User->>UI: Select Interview Topic (e.g., Python)
-    UI->>API: POST /sessions (topic: "Python")
-    API->>DB: Create Session Record (overall_score=None, is_completed=false)
-    DB-->>API: Return session_id
-    API-->>UI: Return session_id
-
-    UI->>API: POST /sessions/{session_id}/questions
-    alt RAG Active
-        API->>VDB: Query context from knowledge.md for selected topic
-        VDB-->>API: Return top-k text chunks (concepts/rubrics)
-        API->>LLM: Generate question (inject context)
-    else RAG Failure / Deferral
-        API->>LLM: Standard Prompt-Only question generation (fallback)
-    end
-    LLM-->>API: Return single question text
-    API->>DB: Save question record (session_id, question_text)
-    API-->>UI: Return question (question_id, question_text)
-
-    User->>UI: Type answer & click "Submit"
-    UI->>API: POST /questions/{question_id}/answer (user_answer)
-    API->>DB: Update question record with user_answer
-    alt RAG Active
-        API->>VDB: Query evaluation rubrics for the question
-        VDB-->>API: Return evaluation context
-        API->>LLM: Evaluate response (question + answer + rubric context)
-    else RAG Failure / Deferral
-        API->>LLM: Standard Prompt-Only response evaluation (fallback)
-    end
-    LLM-->>API: Return JSON (score, feedback, improvement_suggestions)
-    API->>DB: Save evaluation results (score, feedback, suggestions)
-    API-->>UI: Return evaluation details
-    UI->>User: Display Score, Feedback, and "Complete Session" Button
-
-    User->>UI: Click "Complete Session"
-    UI->>API: POST /sessions/{session_id}/complete
-    API->>DB: Fetch question score & set as overall_score
-    API->>LLM: Generate final session summary based on response
-    LLM-->>API: Return brief session summary text
-    API->>DB: Update Session record (overall_score, summary, is_completed=true)
-    API-->>UI: Return completion status (overall_score, summary)
-    UI->>User: Navigate to Dashboard and display session list
-```
-
----
-
-## 4. Component Responsibilities
+## 3. Component Responsibilities
 
 ### Frontend Responsibilities
 * **Routing & Navigation**: Render exactly four pages:
-  * **Home Page**: Initial entry point.
+  * **Home Page**: Welcome screen.
   * **Topic Selection**: Choose Python, DSA, or HR.
   * **Interview Page**: View containing the Current Question, a Multi-line Answer Textbox, a Submit Button, Score, Feedback, and a Complete Session Button.
   * **Dashboard**: List of previous sessions showing Topic, Date, Average Score, and Session Summary.
-* **State Management**: Track the active session ID, input textbox strings, and UI transitions.
-* **UI Polish**: Standard clean layout using Tailwind CSS. 
+* **State Management & Session Handling**: Track parent page states. The active `session_id` is managed directly in the React `App` parent component state to map the selected topic view directly to the active Interview question.
+* **UI Polish**: Standard clean layout using Tailwind CSS. Displays a simple `"Processing..."` text message while API calls are executing.
 * **Out-of-Scope (Excluded)**: No split panes, code syntax highlighting, markdown parsing, typing animations, complex chat structures, or advanced UI effects.
 
 ### Backend Responsibilities
-* **Routing & Controllers**: Expose exactly six RESTful endpoints for sessions, questions, evaluations, and history.
-* **RAG Retrieval & Fallback**: Extract context locally from ChromaDB collections corresponding to `backend/data/knowledge.md`. Provide automatic fallback handling.
-* **LLM Prompts & Orchestrator**: Manage prompt templates, communicating with Gemini API via the official Python SDK.
-* **Data Persistence**: Map relational schemas to SQLite using SQLModel.
-* **Data Validation**: Enforce typing constraints on incoming payloads and outgoing responses using Pydantic.
+
+• Generate interview questions using Gemini.
+
+• Evaluate user answers.
+
+• Store interview sessions and interview history in SQLite.
+
+• Return evaluation results to the frontend.
 
 ---
 
-## 5. Technology Selection Rationale
+## 4. Technology Selection Rationale
 
-* **FastAPI**: Exceptionally fast development speed, high performance due to asynchronous capabilities, and automatic OpenAPI documentation generation.
-* **SQLModel**: Unifies SQLAlchemy (database) and Pydantic (data validation). This prevents code duplication, as a single class serves as both the database model and the API schema.
-* **SQLite**: Embedded database that stores data in a local file. This removes the need for database installation, provisioning, or network configuration.
-* **ChromaDB**: Runs as an in-memory or embedded database. Excellent choice for rapid prototyping because it requires zero server setup.
-* **Sentence Transformers (`all-MiniLM-L6-v2`)**: A lightweight embedding model (under 120MB) that runs entirely on standard CPUs. It generates high-quality 384-dimensional embeddings locally, eliminating remote API costs for embedding generation.
-* **Gemini API (`gemini-2.5-flash`)**: High-performance, cost-effective multimodal LLM with extremely low latency. Crucially, it supports native Structured JSON Outputs, guaranteeing that the AI evaluation parsing never breaks.
+* **FastAPI**: High-performance, async-first Python web framework with auto-generated OpenAPI docs. Incorporates `CORSMiddleware` configured to safely accept requests originating from the local React development server (`http://localhost:5173`).
+* **SQLModel**: Provides type-safe ORM models built on SQLAlchemy and Pydantic.
+* **SQLite**: Lightweight, file-based relational database; requires zero configuration.
+* **Gemini API (`gemini-2.5-flash`)**: High-performance, cost-effective multimodal LLM with extremely low latency.
 * **React**: Component-driven model allows for the creation of an interactive, real-time chat interface that updates fluidly.
 
 ---
 
-## 6. RAG Architecture & Ingestion
-To keep the retrieval pipeline lightweight and easy to maintain:
-
-1. **Exact Knowledge Source**: Ingestion is restricted to exactly **one local Markdown file**:
-   * `backend/data/knowledge.md`
-   * This file holds distinct sections for Python, DSA, and HR interview concepts, questions, and evaluation guidelines.
-2. **Ingestion & Embedding**: 
-   * On startup, the backend reads this file, splits it into fixed-size chunks (e.g., using Markdown headers or fixed character windows), and generates vector embeddings locally using the cached `SentenceTransformer('all-MiniLM-L6-v2')`.
-   * The vectors are indexed inside ChromaDB.
-3. **Retrieval & Fallback**:
-   * Similarity search maps the selected topic name to the indexed chunks to extract relevant questions and grading guidelines (top-k lookup).
-   * **Graceful Fallback**: If ChromaDB initialization fails, file access fails, or embeddings generation encounters an error, the orchestrator logs the issue and executes standard prompt-only question generation and response grading.
-
----
-
-## 7. Database Design (SQLite)
+## 5. Database Design (SQLite)
 The application utilizes SQLModel to construct **exactly** two relational tables in SQLite. No other tables may be added.
 
-```mermaid
-erDiagram
-    InterviewSession ||--o{ InterviewQuestion : contains
-    InterviewSession {
-        int id PK
-        string topic
-        datetime created_at
-        float overall_score
-        string summary
-        boolean is_completed
-    }
-    InterviewQuestion {
-        int id PK
-        int session_id FK
-        string question_text
-        string user_answer
-        int score
-        string feedback
-        string improvement_suggestions
-        datetime timestamp
-    }
-```
+### Database Schema Diagram
+![Database Schema](images/database-schema.png)
 
 ### Table Schema Definitions
 
@@ -213,7 +102,7 @@ erDiagram
 
 ---
 
-## 8. API Design
+## 6. API Design
 
 ### Endpoints (Strictly Exposes Only 6 Endpoints)
 
@@ -327,7 +216,7 @@ erDiagram
 
 ---
 
-## 9. Project Directory Structure
+## 7. Project Directory Structure
 The workspace will organize code into clear directories:
 
 ```text
@@ -336,47 +225,103 @@ ai-interview-coach/
 ├── backend/
 │   ├── app/
 │   │   ├── __init__.py
-│   │   ├── main.py              # FastAPI initialization & config
-│   │   ├── database.py          # SQLite engine & database helper
-│   │   ├── models.py            # SQLModel schema classes
-│   │   ├── schemas.py           # Pydantic request/response structures
-│   │   ├── routes/              # Modular API controllers
+│   │   ├── main.py
+│   │   ├── database.py
+│   │   ├── models.py
+│   │   ├── schemas.py
+│   │   ├── routes/
 │   │   │   ├── __init__.py
 │   │   │   ├── sessions.py
 │   │   │   └── questions.py
-│   │   └── services/            # Business logic layers
+│   │   └── services/
 │   │       ├── __init__.py
-│   │       ├── gemini.py        # Gemini API interface
-│   │       └── rag.py           # ChromaDB & Embedding service
+│   │       └── gemini.py
 │   │
-│   ├── data/
-│   │   ├── knowledge.md         # Exactly ONE knowledge Markdown file
-│   │   └── vector_store/        # ChromaDB SQLite/persist data
-│   │
-│   └── tests/                   # Backend tests
+│   └── tests/
 │
 ├── frontend/
 │   ├── public/
 │   └── src/
-│       ├── assets/              # Styling resources
-│       ├── components/          # Reusable UI components
-│       ├── pages/               # Page components
-│       │   ├── Home.jsx         # Home Page component
-│       │   ├── TopicSelection.jsx # Topic Selection Page component
-│       │   ├── Interview.jsx    # Interview Page component
-│       │   └── Dashboard.jsx    # Dashboard Page component
-│       ├── services/            # Axios API calls mapping
+│       ├── assets/
+│       ├── components/
+│       ├── pages/
+│       │   ├── Home.jsx
+│       │   ├── TopicSelection.jsx
+│       │   ├── Interview.jsx
+│       │   └── Dashboard.jsx
+│       ├── services/
+│       │   └── api.js
 │       ├── App.jsx
-│       ├── index.css            # Base Tailwind imports
+│       ├── index.css
 │       └── index.jsx
 │
-├── docs/                        # Project documentation
+├── docs/
+│   ├── images/
+│   │   ├── high-level-architecture.png
+│   │   ├── interview-workflow.png
+│   │   └── database-schema.png
 │   ├── Problem.md
 │   ├── Requirements.md
 │   ├── Architecture.md
 │   └── ImplementationPlan.md
 │
-├── .env.example                 # Environment template file
-├── README.md                    # Setup and startup guide
-└── requirements.txt             # Python dependencies
+├── .env.example
+├── README.md
+└── requirements.txt
 ```
+
+---
+
+## 8. Folder Structure Explanation
+For every major folder and important file (including subfiles), its responsibility is described below:
+
+### Root Project Directory
+* `ai-interview-coach/`: Root folder of the project containing backend, frontend, documentation, and configuration files.
+* `.env.example`: Template configuration file listing required environment variables (e.g., `GEMINI_API_KEY`) to be set locally.
+* `README.md`: Entry-level guide detailing steps to build, configure, and launch the application.
+* `requirements.txt`: Python package manifest containing the locked dependencies for the backend.
+
+### Backend Application Code (`backend/`)
+* `backend/`: Directory containing all Python backend source code, settings, databases, and tests.
+* `backend/app/`: The FastAPI core package housing routing controllers, services, database engines, and model definitions.
+* `backend/app/__init__.py`: Python package marker file initialization.
+* `backend/app/main.py`: Main backend entry point initializing FastAPI, configuring CORS middlewares, and mounting routers.
+* `backend/app/database.py`: Establishes the SQLite connection pool engine and database utility operations.
+* `backend/app/models.py`: Defines SQLModel tables mapping to SQLite relational database schemas.
+* `backend/app/schemas.py`: Contains auxiliary Pydantic schemas validating API request bodies and JSON responses.
+* `backend/app/routes/`: Router controllers folder handling specific endpoint path groupings.
+* `backend/app/routes/__init__.py`: Package initialization marker for routers.
+* `backend/app/routes/sessions.py`: Endpoint paths handling session creation, completion, listing, and historic lookups.
+* `backend/app/routes/questions.py`: Endpoint paths handling question generation prompts and answer submissions.
+* `backend/app/services/`: Service logic directory handling third-party integrations and helper routines.
+* `backend/app/services/__init__.py`: Package initialization marker for services.
+* `backend/app/services/gemini.py`: Service class wrapping the official Google Gen AI SDK for text generation and structured evaluation.
+* `backend/tests/`: Directory containing unit tests validating backend routes and logic operations.
+
+### Frontend Application Code (`frontend/`)
+* `frontend/`: React single-page application package directory.
+* `frontend/public/`: Directory containing static public web resources (favicon, index.html asset, manifest).
+* `frontend/src/`: React source code directory.
+* `frontend/src/assets/`: Styling resources, fonts, and images.
+* `frontend/src/components/`: Reusable, layout-agnostic React elements (e.g., standard layout headers, loading indicators, custom widgets).
+* `frontend/src/pages/`: Main page components corresponding to the four primary views.
+* `frontend/src/pages/Home.jsx`: The welcome screen page welcoming candidates and initiating the interview prep track.
+* `frontend/src/pages/TopicSelection.jsx`: Screen page presenting Python, DSA, and HR options.
+* `frontend/src/pages/Interview.jsx`: Dynamic session view page housing the current question, response textbox, submit trigger, and feedback.
+* `frontend/src/pages/Dashboard.jsx`: Screen list page showing the tabular grid of previous sessions and summaries.
+* `frontend/src/services/`: Modules handling API calls.
+* `frontend/src/services/api.js`: Axios configuration setting base URLs and exporting functions for endpoint requests.
+* `frontend/src/App.jsx`: Main React component defining view routings and context scopes.
+* `frontend/src/index.css`: Base Tailwind directives and custom CSS rules.
+* `frontend/src/index.jsx`: Application DOM mounting entry point.
+
+### Project Documentation (`docs/`)
+* `docs/`: Directory containing all system design documents.
+* `docs/images/`: Folder housing high-level system diagrams, flow sequences, and relational schemas as PNG files.
+* `docs/images/high-level-architecture.png`: Diagram showing client, server, SQLite, and Gemini connections.
+* `docs/images/interview-workflow.png`: Diagram showing the exact sequential steps of an active interview session.
+* `docs/images/database-schema.png`: Relational table layout mapping keys and fields.
+* `docs/Problem.md`: Outlines project goals, objectives, existing prep challenges, and scope constraints.
+* `docs/Requirements.md`: Outlines functional requirements, non-functional rules, and target environment specs.
+* `docs/Architecture.md`: Details the software structures, API blueprints, database tables, and folder maps.
+* `docs/ImplementationPlan.md`: Outlines the 3-phase chronological developer tasks and milestones.

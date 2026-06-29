@@ -11,28 +11,26 @@ This document details the functional, non-functional, hardware, software, and de
   * **Python Programming**
   * **Data Structures & Algorithms (DSA)**
   * **HR Interview**
-* **FR-1.2**: Choosing a topic must initialize a new interview session and transition the user to the Interview Page.
-* **FR-1.3**: The topic selection must trigger the backend to prepare the specific vector database collection for retrieval.
+* **FR-1.2**: Choosing a topic must initialize a new interview session and transition the user to the Interview Page by saving the returned session_id in the frontend application state.
+* **FR-1.3**: The topic selection must trigger the backend to prepare a session matching the selected topic enum.
 
 ### FR-2: Question Generation
-* **FR-2.1**: The system must query ChromaDB to retrieve relevant context (concepts, questions, rubrics) matching the selected topic from the single source file `backend/data/knowledge.md`.
-* **FR-2.2**: The retrieved context must be injected into a prompt template sent to the Gemini API.
-* **FR-2.3**: The Gemini API must generate exactly one interview question tailored to the topic and the retrieved guidelines.
-* **FR-2.4**: **One-Question Length**: The system must enforce an exact length of **one question** per interview session. Multi-turn conversational questions or multiple question loops are not supported.
-* **FR-2.5**: **RAG Fallback**: If ChromaDB, local embeddings generation, or file access fails, the backend must fall back to a standard prompt-only Gemini generation using built-in system prompt guidelines.
+* **FR-2.1**: The system must construct a prompt using simple, hardcoded constant strings defined in the backend code for the selected topic (Python, DSA, or HR).
+* **FR-2.2**: The prompt must be sent directly to the Gemini API to generate exactly one interview question.
+* **FR-2.3**: **One-Question Length**: The system must enforce an exact length of **one question** per interview session. Multi-turn conversational questions or multiple question loops are not supported.
 
 ### FR-3: Answer Submission
 * **FR-3.1**: The user must be provided with a multi-line answer textbox to submit their response on the Interview Page.
 * **FR-3.2**: The system must validate that the submission is not empty before sending it to the backend.
-* **FR-3.3**: The system must display a loading indicator while the user's answer is being processed and evaluated.
+* **FR-3.3**: The system must display a simple `"Processing..."` text message in the UI while the user's answer is being processed and evaluated.
 
 ### FR-4: AI Evaluation
-* **FR-4.1**: The backend must send the user's answer, the question, and retrieval context (or use fallback prompt) to the Gemini API for evaluation.
-* **FR-4.2**: The evaluation response from Gemini must follow a structured JSON response containing:
-  * **Score**: An integer between 0 and 100 representing the accuracy and quality of the response.
-  * **Feedback**: A qualitative assessment highlighting what the user answered correctly.
-  * **Improvement Suggestions**: Actionable points detailing missing concepts or soft-skill corrections.
-* **FR-4.3**: **Evaluation Fallback**: If RAG is unavailable, the Gemini evaluation must be computed using standard prompt-only guidelines.
+* **FR-4.1**: The backend must send the user's answer and the question to the Gemini API for evaluation.
+* **FR-4.2**:The backend extracts the evaluation returned by the Gemini API and sends a structured response to the frontend containing:
+  * **score**: An integer between 0 and 100 representing the response quality.
+  * **feedback**: A string containing qualitative assessment.
+  * **improvement_suggestions**: A string listing actionable points.
+* **FR-4.3**: The backend parses this evaluation and returns it directly to the frontend.
 
 ### FR-5: Interview History
 * **FR-5.1**: Each interview session must be stored in the local SQLite database. The schema is restricted to exactly two tables: `InterviewSession` and `InterviewQuestion`. No extra tables are permitted.
@@ -54,10 +52,9 @@ This document details the functional, non-functional, hardware, software, and de
 ## 2. Non-Functional Requirements
 
 ### NFR-1: Performance
-* **NFR-1.1**: The RAG retrieval from ChromaDB must complete in under **500 milliseconds**.
-* **NFR-1.2**: API response time for non-AI database calls (e.g., loading history, rendering dashboard) must be under **200 milliseconds**.
-* **NFR-1.3**: The total turnaround time for Gemini question generation and answer evaluation must be under **5 seconds** under standard network conditions.
-* **NFR-1.4**: The frontend must show responsive loading indicators (skeleton loaders or spinners) for any action taking longer than **300 milliseconds**.
+* **NFR-1.1**: Database operations should complete within approximately 200 milliseconds under normal local execution.
+* **NFR-1.2**: The total turnaround time for Gemini question generation and answer evaluation must be under **5 seconds** under standard network conditions.
+* **NFR-1.3**: The frontend must display a simple loading indicator while requests are being processed.
 
 ### NFR-2: Maintainability
 * **NFR-2.1**: The codebase must be separated into decoupled frontend (`/frontend`) and backend (`/backend`) directories.
@@ -65,8 +62,8 @@ This document details the functional, non-functional, hardware, software, and de
 * **NFR-2.3**: React components must be modular, separating logical state hooks from visual representation.
 
 ### NFR-3: Scalability
-* **NFR-3.1**: The system must support modifying questions and concepts simply by editing the single local Markdown file `backend/data/knowledge.md`, without altering the database schema or core engine.
-* **NFR-3.2**: Vector database collection names must correspond to the topics (`python`, `dsa`, `hr`) to ensure clean isolation of the retrieved chunks.
+* **NFR-3.1**: The system must support modifying interview generation templates simply by editing backend prompt configuration strings, without altering the database schema or core engine.
+* **NFR-3.2**: Database relations must remain simple (1 Session to 1 Question) to optimize indexing and querying.
 
 ### NFR-4: Usability (Simplified UI)
 * **NFR-4.1**: The UI is simplified to contain exactly four pages:
@@ -77,10 +74,9 @@ This document details the functional, non-functional, hardware, software, and de
 * **NFR-4.2**: The frontend will use standard responsive web design using Tailwind utility classes.
 * **NFR-4.3**: Complex visual elements, including split panes, code syntax highlighting, markdown parsing, typing animations, chat layouts, and advanced UI effects, are **completely excluded** to keep the project clean and achievable.
 
-### NFR-5: Reliability & Fallbacks
+### NFR-5: Reliability
 * **NFR-5.1**: In case of a Gemini API outage, the backend must fail gracefully, returning a descriptive error to the client instead of crashing.
-* **NFR-5.2**: If the RAG file or database is corrupted or missing, the system must log the warning and execute a standard prompt-only generation.
-* **NFR-5.3**: The local database write operations must use transaction blocks to prevent partial or corrupted session logs.
+* **NFR-5.2**: The local database write operations must use transaction blocks to prevent partial or corrupted session logs.
 
 ---
 
@@ -88,8 +84,8 @@ This document details the functional, non-functional, hardware, software, and de
 
 ### Development & Host Environment
 * **CPU**: Dual-core x86_64 or ARM64 processor (Intel i5/AMD Ryzen 5 or Apple M1/M2/M3).
-* **Memory**: Minimum **8 GB RAM** (16 GB recommended, due to local execution of Sentence Transformers embedding model).
-* **Storage**: Minimum **2 GB** of free disk space.
+* **Memory**: Minimum **4 GB RAM**.
+* **Storage**: Minimum **500 MB** of free disk space.
 
 ---
 
@@ -106,7 +102,7 @@ This document details the functional, non-functional, hardware, software, and de
 
 ## 5. Technology Stack
 
-| Layer | Technology | Version / Rationale |
+| Layer | Technology | Rationale |
 | :--- | :--- | :--- |
 | **Frontend** | React.js | UI framework; component-driven SPA for seamless state transitions. |
 | **Styling** | Tailwind CSS | Utility-first CSS framework for clean, responsive styling. |
@@ -116,8 +112,6 @@ This document details the functional, non-functional, hardware, software, and de
 | **Database** | SQLite | Lightweight, file-based relational database; requires zero configuration. |
 | **Data Validation** | Pydantic v2 | Python data validation and settings management using type hints. |
 | **AI LLM** | Gemini API | Cost-efficient, high-context LLM; accessed via official Google Gen AI SDK. |
-| **Vector DB** | ChromaDB | Lightweight, open-source embedded vector database; runs in-process. |
-| **Embeddings** | Sentence Transformers | Local embedding model (`all-MiniLM-L6-v2`) for generating vector representations. |
 
 ---
 
@@ -125,7 +119,7 @@ This document details the functional, non-functional, hardware, software, and de
 The backend must expose **only** the following six endpoints. No other endpoints should be added.
 
 * `POST /sessions`: Creates and starts a new interview session.
-* `POST /sessions/{session_id}/questions`: Generates the single question using RAG (or prompt fallback) and Gemini.
+* `POST /sessions/{session_id}/questions`: Generates the single question using Gemini prompting.
 * `POST /questions/{question_id}/answer`: Submits the user's answer for evaluation and returns the score, feedback, and improvement suggestions.
 * `POST /sessions/{session_id}/complete`: Calculates the overall score, generates the session summary, and marks the session complete.
 * `GET /sessions`: Lists previous interview sessions (for Dashboard display).
