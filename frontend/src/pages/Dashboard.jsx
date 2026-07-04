@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
+import Conversation from '../components/Conversation';
 
 export default function Dashboard({ onBackToHome }) {
   const [sessions, setSessions] = useState([]);
@@ -8,6 +9,7 @@ export default function Dashboard({ onBackToHome }) {
   
   const [selectedSession, setSelectedSession] = useState(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [mobileView, setMobileView] = useState('list'); // 'list' or 'chat'
 
   useEffect(() => {
     const fetchSessions = async () => {
@@ -26,8 +28,9 @@ export default function Dashboard({ onBackToHome }) {
     fetchSessions();
   }, []);
 
-  const handleViewDetails = async (sessionId) => {
+  const handleSelectSession = async (sessionId) => {
     setLoadingDetail(true);
+    setMobileView('chat');
     setError(null);
     try {
       const data = await api.getSessionDetails(sessionId);
@@ -44,15 +47,71 @@ export default function Dashboard({ onBackToHome }) {
     try {
       const date = new Date(dateStr);
       return date.toLocaleDateString(undefined, {
-        year: 'numeric',
         month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
+        day: 'numeric'
       });
     } catch (e) {
       return dateStr;
     }
+  };
+
+  // Derive conversation message logs for history reviews
+  const deriveSessionMessages = (session) => {
+    if (!session) return [];
+
+    const list = [
+      {
+        id: `welcome-${session.id}`,
+        type: 'chat',
+        sender: 'ai',
+        text: `Welcome to your **${session.topic} Interview**.\n\nThe AI interviewer will ask exactly one technical question. Type your answer in the box below and submit for scoring.`,
+        timestamp: session.created_at
+      }
+    ];
+
+    if (session.questions && session.questions.length > 0) {
+      const q = session.questions[0];
+      list.push({
+        id: `question-${q.id}`,
+        type: 'chat',
+        sender: 'ai',
+        text: q.question_text,
+        timestamp: q.timestamp || session.created_at
+      });
+
+      if (q.user_answer) {
+        list.push({
+          id: `answer-${q.id}`,
+          type: 'chat',
+          sender: 'user',
+          text: q.user_answer,
+          timestamp: q.timestamp || session.created_at
+        });
+
+        if (q.score !== null) {
+          list.push({
+            id: `evaluation-${q.id}`,
+            type: 'evaluation',
+            score: q.score,
+            feedback: q.feedback,
+            improvementSuggestions: q.improvement_suggestions,
+            timestamp: q.timestamp || session.created_at
+          });
+        }
+      }
+    }
+
+    if (session.is_completed) {
+      list.push({
+        id: `summary-${session.id}`,
+        type: 'chat',
+        sender: 'ai',
+        text: `Great job! Your interview has been completed.\n\n**Overall Score**: ${Math.round(session.overall_score)}/100\n\n**Summary**:\n${session.summary}`,
+        timestamp: session.created_at
+      });
+    }
+
+    return list;
   };
 
   if (loading) {
@@ -66,173 +125,144 @@ export default function Dashboard({ onBackToHome }) {
   }
 
   return (
-    <div className="max-w-4xl w-full mx-auto px-4 py-8 space-y-8">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-700 pb-4">
-        <div>
-          <h2 className="text-3xl font-extrabold text-white">Performance Dashboard</h2>
-          <p className="text-slate-400 text-sm mt-1">Review your past practice sessions and feedback.</p>
-        </div>
-        <button
-          onClick={onBackToHome}
-          className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-sm font-bold rounded-lg transition-colors active:scale-95"
-        >
-          Back to Home
-        </button>
-      </div>
-
-      {error && (
-        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-400 font-medium text-center">
-          {error}
-        </div>
-      )}
-
-      {/* Main Grid: Session List & Inline Details */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+    <div className="flex flex-col h-[82vh] bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
+      
+      {/* Layout Grid */}
+      <div className="flex-1 flex overflow-hidden min-h-0">
         
-        {/* Session List Table */}
-        <div className={`space-y-4 ${selectedSession ? 'lg:col-span-6' : 'lg:col-span-12'}`}>
-          <h3 className="text-lg font-bold text-slate-200">Previous Interview Sessions</h3>
-          
+        {/* Left Sidebar Pane */}
+        <div className={`${
+          mobileView === 'chat' ? 'hidden lg:flex' : 'flex'
+        } w-full lg:w-80 border-r border-slate-850 bg-slate-950/20 flex-col p-4 shrink-0 min-h-0 space-y-4`}>
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-black text-indigo-400 uppercase tracking-wider">Previous Interviews</h3>
+            <button
+              onClick={onBackToHome}
+              className="text-xs font-bold text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              Exit History
+            </button>
+          </div>
+
           {sessions.length === 0 ? (
-            <div className="text-center py-12 bg-slate-800/20 border border-slate-700/50 rounded-2xl text-slate-500 font-medium">
-              No sessions found. Start a practice interview to see your records!
+            <div className="flex-1 flex items-center justify-center text-center p-4 text-xs font-semibold text-slate-500 border border-dashed border-slate-800 rounded-xl">
+              No previous interviews found. Complete a track to log history.
             </div>
           ) : (
-            <div className="bg-slate-800/30 border border-slate-700/50 rounded-2xl overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-800/75 border-b border-slate-700 text-slate-400 text-xs font-bold uppercase tracking-wider">
-                      <th className="p-4">Topic</th>
-                      <th className="p-4">Date</th>
-                      <th className="p-4">Score</th>
-                      <th className="p-4 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-700/40 text-slate-200 text-sm font-medium">
-                    {sessions.map((session) => (
-                      <tr
-                        key={session.id}
-                        className={`hover:bg-slate-800/40 transition-colors ${
-                          selectedSession?.id === session.id ? 'bg-indigo-500/5' : ''
-                        }`}
-                      >
-                        <td className="p-4">
-                          <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase border ${
-                            session.topic === 'Python'
-                              ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
-                              : session.topic === 'DSA'
-                              ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
-                              : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                          }`}>
-                            {session.topic}
-                          </span>
-                        </td>
-                        <td className="p-4 text-slate-400">{formatDate(session.created_at)}</td>
-                        <td className="p-4 font-bold text-slate-100">
-                          {session.is_completed ? `${Math.round(session.overall_score)}/100` : 'In Progress'}
-                        </td>
-                        <td className="p-4 text-right">
-                          <button
-                            onClick={() => handleViewDetails(session.id)}
-                            className="px-3 py-1.5 bg-indigo-600/10 hover:bg-indigo-600 border border-indigo-500/20 hover:border-indigo-500 text-indigo-400 hover:text-white text-xs font-bold rounded transition-all active:scale-95"
-                          >
-                            Details
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 select-none">
+              {sessions.map((session) => {
+                const isActive = selectedSession?.id === session.id;
+                const isPython = session.topic === 'Python';
+                const isDSA = session.topic === 'DSA';
+                const topicEmoji = isPython ? '🐍' : isDSA ? '💻' : '🤝';
+
+                return (
+                  <button
+                    key={session.id}
+                    onClick={() => handleSelectSession(session.id)}
+                    className={`w-full text-left p-3.5 rounded-xl border transition-all active:scale-98 flex flex-col gap-2 ${
+                      isActive 
+                        ? 'bg-indigo-600/10 border-indigo-500/50 shadow-md shadow-indigo-650/5' 
+                        : 'bg-slate-800/30 border-slate-800/80 hover:bg-slate-800/50 hover:border-slate-700/60'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="text-xs font-bold text-slate-100 flex items-center gap-1.5">
+                        <span>{topicEmoji}</span>
+                        <span>{session.topic} Interview</span>
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-bold">
+                        {formatDate(session.created_at)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between w-full">
+                      <span className="text-[11px] text-slate-400 font-medium">
+                        {session.is_completed ? 'Completed' : 'In Progress'}
+                      </span>
+                      <span className={`text-xs font-black ${
+                        isActive ? 'text-indigo-400' : 'text-slate-300'
+                      }`}>
+                        {session.is_completed ? `${Math.round(session.overall_score)}/100` : '—'}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
 
-        {/* Inline Detailed View */}
-        {selectedSession && (
-          <div className="lg:col-span-6 bg-slate-800/40 border border-slate-700/50 backdrop-blur-md rounded-2xl p-6 shadow-lg space-y-6 h-fit">
-            
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-700/60 pb-3">
-              <div>
-                <h3 className="text-xl font-bold text-slate-100">Session Review</h3>
-                <p className="text-slate-400 text-xs mt-0.5">{formatDate(selectedSession.created_at)}</p>
+        {/* Right Conversation Pane */}
+        <div className={`${
+          mobileView === 'list' ? 'hidden lg:flex' : 'flex'
+        } flex-1 flex-col p-4 sm:p-6 min-h-0 bg-slate-950/5`}>
+          
+          {selectedSession ? (
+            <div className="flex-1 flex flex-col min-h-0 space-y-4">
+              
+              {/* Session Context Header */}
+              <div className="flex items-center justify-between border-b border-slate-800/60 pb-3">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setMobileView('list')}
+                    className="lg:hidden p-1.5 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-lg mr-1 active:scale-95 transition-all"
+                    title="Back to history"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                    </svg>
+                  </button>
+                  <div>
+                    <h4 className="text-sm font-black text-slate-200">
+                      Transcript: {selectedSession.topic} Track
+                    </h4>
+                    <p className="text-[10px] text-slate-500 font-bold">
+                      Session ID: #{selectedSession.id}
+                    </p>
+                  </div>
+                </div>
+                
+                <button
+                  onClick={() => setSelectedSession(null)}
+                  className="text-xs font-bold text-slate-500 hover:text-slate-300 transition-colors"
+                >
+                  Close Transcript
+                </button>
               </div>
-              <button
-                onClick={() => setSelectedSession(null)}
-                className="text-slate-500 hover:text-slate-300 transition-colors font-medium text-sm"
-              >
-                Close details
-              </button>
-            </div>
 
-            {/* Overall Score */}
-            <div className="flex items-center gap-4 bg-slate-900/50 rounded-xl p-4 border border-slate-700/40">
-              <span className="text-3xl font-extrabold text-indigo-400 bg-indigo-500/10 border border-indigo-500/25 px-3 py-1 rounded-lg">
-                {Math.round(selectedSession.overall_score)}
-              </span>
-              <div>
-                <h4 className="text-sm font-bold text-slate-300">Overall Score</h4>
-                <p className="text-xs text-slate-500">Averaged from session evaluations</p>
-              </div>
-            </div>
+              {/* Chat View */}
+              <Conversation messages={deriveSessionMessages(selectedSession)} />
 
-            {/* Overall Summary */}
-            <div className="space-y-1">
-              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Summary</h4>
-              <p className="text-slate-200 text-sm leading-relaxed font-medium bg-slate-900/20 border border-slate-800 rounded-lg p-3">
-                {selectedSession.summary}
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
+              <div className="text-slate-650 text-5xl mb-4">💬</div>
+              <h3 className="text-slate-300 font-bold text-lg">Conversation History</h3>
+              <p className="text-slate-500 text-sm max-w-sm mt-1">
+                Select a previous interview to view the conversation.
               </p>
             </div>
+          )}
 
-            {/* Questions Detailed Logs */}
-            {selectedSession.questions && selectedSession.questions.length > 0 ? (
-              <div className="space-y-4">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wide">Question Logs</h4>
-                {selectedSession.questions.map((q, idx) => (
-                  <div key={q.id} className="space-y-3 border-t border-slate-700/40 pt-3">
-                    <div className="bg-slate-900/30 border border-slate-800 rounded-lg p-3">
-                      <span className="text-xs font-bold text-indigo-400">Q: </span>
-                      <span className="text-slate-200 text-sm font-semibold">{q.question_text}</span>
-                    </div>
-
-                    <div className="bg-slate-900/10 border border-slate-800 rounded-lg p-3">
-                      <span className="text-xs font-bold text-slate-500">Your Answer: </span>
-                      <p className="text-slate-300 text-sm leading-relaxed mt-1 whitespace-pre-wrap font-medium">{q.user_answer || '(No answer submitted)'}</p>
-                    </div>
-
-                    {q.score !== null && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div className="bg-slate-900/30 border border-slate-800 rounded-lg p-3">
-                          <span className="text-xs font-bold text-indigo-400 block mb-1">Feedback</span>
-                          <p className="text-slate-300 text-xs leading-relaxed font-medium">{q.feedback}</p>
-                        </div>
-                        <div className="bg-slate-900/30 border border-slate-800 rounded-lg p-3">
-                          <span className="text-xs font-bold text-indigo-400 block mb-1">Suggestions</span>
-                          <p className="text-slate-300 text-xs leading-relaxed font-medium">{q.improvement_suggestions}</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-slate-500 text-xs">No questions logged in database.</p>
-            )}
-
-          </div>
-        )}
+        </div>
 
       </div>
-      
-      {/* Simple Processing message for details */}
+
+      {/* Loading detail indicator overlay */}
       {loadingDetail && (
-        <div className="text-center text-indigo-400 font-medium animate-pulse">
-          Processing...
+        <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50">
+          <div className="text-indigo-400 font-bold text-sm animate-pulse">
+            Retrieving details...
+          </div>
         </div>
       )}
+
+      {error && (
+        <div className="bg-rose-500/10 border-t border-rose-500/25 p-4 text-center text-rose-400 text-sm font-medium">
+          {error}
+        </div>
+      )}
+
     </div>
   );
 }
