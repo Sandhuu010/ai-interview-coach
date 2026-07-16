@@ -11,8 +11,8 @@ export default function ChatBubble({ sender, text, timestamp }) {
   };
 
   return (
-    <div className={`flex gap-3 w-full p-4 border-b border-slate-800/40 animate-fade-in ${
-      isAI ? 'bg-slate-900/10' : 'bg-indigo-950/5'
+    <div className={`flex gap-3 w-full py-4 px-0 border-b border-slate-800/40 animate-fade-in ${
+      isAI ? 'bg-slate-900/10 flex-row' : 'bg-indigo-950/5 flex-row-reverse'
     }`}>
       
       {/* Avatar column */}
@@ -27,10 +27,10 @@ export default function ChatBubble({ sender, text, timestamp }) {
       </div>
 
       {/* Message content */}
-      <div className="flex-1 space-y-1.5 max-w-[85%]">
+      <div className={`flex-1 space-y-1.5 max-w-[85%] ${!isAI ? 'text-right' : 'text-left'}`}>
         
         {/* Sender Name & Time */}
-        <div className="flex items-baseline gap-2">
+        <div className={`flex items-baseline gap-2 ${!isAI ? 'justify-end flex-row-reverse' : 'justify-start'}`}>
           <span className="text-xs font-black text-slate-300 uppercase tracking-wide">
             {isAI ? 'AI Interviewer' : 'You'}
           </span>
@@ -50,14 +50,16 @@ export default function ChatBubble({ sender, text, timestamp }) {
                   ol: ({ node, ...props }) => <ol className="list-decimal pl-5 mb-2 space-y-1" {...props} />,
                   li: ({ node, ...props }) => <li className="text-slate-200" {...props} />,
                   strong: ({ node, ...props }) => <strong className="font-extrabold text-indigo-300" {...props} />,
-                  code: ({ node, inline, className, children, ...props }) => {
-                    return inline ? (
+                  code: ({ node, className, children, ...props }) => {
+                    const match = /language-(\w+)/.exec(className || '');
+                    const isInline = !match;
+                    return isInline ? (
                       <code className="bg-slate-800 border border-slate-700/50 rounded px-1.5 py-0.5 text-xs text-indigo-300 font-mono" {...props}>
                         {children}
                       </code>
                     ) : (
                       <pre className="bg-slate-950 border border-slate-800/80 rounded-xl p-4 overflow-x-auto text-xs text-slate-200 font-mono my-2 shadow-inner">
-                        <code {...props}>{children}</code>
+                        <code className={className} {...props}>{children}</code>
                       </pre>
                     );
                   }
@@ -67,7 +69,9 @@ export default function ChatBubble({ sender, text, timestamp }) {
               </ReactMarkdown>
             </div>
           ) : (
-            <p className="text-slate-200">{text}</p>
+            <div className="inline-block bg-indigo-600/15 border border-indigo-500/25 rounded-2xl px-4 py-2 text-left text-slate-200 shadow-md">
+              {text}
+            </div>
           )}
         </div>
       </div>

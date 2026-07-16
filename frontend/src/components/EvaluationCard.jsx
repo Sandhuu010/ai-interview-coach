@@ -9,7 +9,7 @@ export default function EvaluationCard({ score, feedback, improvementSuggestions
   };
 
   return (
-    <div className="flex gap-3 w-full p-4 border-b border-slate-800/40 bg-slate-900/10 animate-fade-in">
+    <div className="flex gap-3 w-full py-4 px-0 border-b border-slate-800/40 bg-slate-900/10 animate-fade-in">
       
       {/* Avatar column */}
       <div className="flex-shrink-0">
@@ -57,14 +57,16 @@ export default function EvaluationCard({ score, feedback, improvementSuggestions
                     components={{
                       p: ({ node, ...props }) => <p className="mb-2 last:mb-0" {...props} />,
                       strong: ({ node, ...props }) => <strong className="font-extrabold text-indigo-300" {...props} />,
-                      code: ({ node, inline, className, children, ...props }) => {
-                        return inline ? (
+                      code: ({ node, className, children, ...props }) => {
+                        const match = /language-(\w+)/.exec(className || '');
+                        const isInline = !match;
+                        return isInline ? (
                           <code className="bg-slate-800 border border-slate-750 rounded px-1.5 py-0.5 text-xs text-indigo-300 font-mono" {...props}>
                             {children}
                           </code>
                         ) : (
                           <pre className="bg-slate-950 border border-slate-850 rounded-xl p-4 overflow-x-auto text-xs text-slate-200 font-mono my-2">
-                            <code {...props}>{children}</code>
+                            <code className={className} {...props}>{children}</code>
                           </pre>
                         );
                       }
@@ -86,14 +88,16 @@ export default function EvaluationCard({ score, feedback, improvementSuggestions
                       components={{
                         p: ({ node, ...props }) => <p className="mb-2 last:mb-0" {...props} />,
                         strong: ({ node, ...props }) => <strong className="font-extrabold text-indigo-300" {...props} />,
-                        code: ({ node, inline, className, children, ...props }) => {
-                          return inline ? (
+                        code: ({ node, className, children, ...props }) => {
+                          const match = /language-(\w+)/.exec(className || '');
+                          const isInline = !match;
+                          return isInline ? (
                             <code className="bg-slate-800 border border-slate-750 rounded px-1.5 py-0.5 text-xs text-indigo-300 font-mono" {...props}>
                               {children}
                             </code>
                           ) : (
                             <pre className="bg-slate-950 border border-slate-850 rounded-xl p-4 overflow-x-auto text-xs text-slate-200 font-mono my-2">
-                              <code {...props}>{children}</code>
+                              <code className={className} {...props}>{children}</code>
                             </pre>
                           );
                         }

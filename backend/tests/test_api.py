@@ -42,8 +42,8 @@ def run_tests():
     question_data = question_response.json()
     assert question_data["session_id"] == session_id
     assert "question_text" in question_data
-    # Confirms it returned the correct Python fallback question
-    assert "difference between a list and a tuple" in question_data["question_text"]
+    # Confirms it returned a valid question (either fallback or live Gemini question)
+    assert len(question_data["question_text"]) > 10
     question_id = question_data["id"]
     print("[OK] Generate Question (Fallback) passed")
 
@@ -70,6 +70,12 @@ def run_tests():
     assert complete_data["id"] == session_id
     assert complete_data["is_completed"] is True
     print("[OK] Complete Session passed")
+
+    # 8. Delete Session
+    delete_response = client.delete(f"/sessions/{session_id}")
+    assert delete_response.status_code == 200
+    assert delete_response.json()["status"] == "success"
+    print("[OK] Delete Session passed")
 
     print("\n*** ALL BACKEND API TESTS PASSED SUCCESSFULLY! ***")
 

@@ -16,7 +16,7 @@ router = APIRouter()
     summary="Generate a new question for a session"
 )
 def generate_session_question(session_id: int, db: Session = Depends(get_session)):
-    """Generates the single question for the interview session via the Gemini API."""
+    """Generates a question for the interview session via the Gemini API, supporting multi-round logic."""
     session = db.get(InterviewSession, session_id)
     if not session:
         raise HTTPException(
@@ -30,15 +30,19 @@ def generate_session_question(session_id: int, db: Session = Depends(get_session
             detail="Cannot generate a question for a completed session."
         )
 
-    # Enforce exactly ONE question per session
-    statement = select(InterviewQuestion).where(InterviewQuestion.session_id == session_id)
+    # Multi-round behavior: check if the most recent question is unanswered/unscored.
+    # If so, return that question. Otherwise, generate a new one.
+    statement = select(InterviewQuestion).where(InterviewQuestion.session_id == session_id).order_by(InterviewQuestion.id.desc())
     existing_questions = db.exec(statement).all()
     if existing_questions:
-        return existing_questions[0]
+        most_recent = existing_questions[0]
+        if most_recent.user_answer is None or most_recent.score is None:
+            return most_recent
 
     try:
         gemini = GeminiService()
-        question_text = gemini.generate_question(session.topic)
+        difficulty = session.difficulty or "Medium"
+        question_text = gemini.generate_question(session.topic, difficulty)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

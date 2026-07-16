@@ -8,6 +8,7 @@ class InterviewSession(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     topic: str  # Python, DSA, or HR
+    difficulty: Optional[str] = Field(default="Medium") # Easy, Medium, or Hard
     created_at: datetime = Field(default_factory=datetime.utcnow)
     overall_score: Optional[float] = None
     summary: Optional[str] = None

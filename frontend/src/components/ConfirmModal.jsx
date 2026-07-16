@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function ConfirmModal({ isOpen, title, message, onConfirm, onCancel }) {
+export default function ConfirmModal({ isOpen, title, message, onConfirm, onCancel, confirmLabel = 'Exit Session' }) {
   if (!isOpen) return null;
 
   return (
@@ -39,7 +39,7 @@ export default function ConfirmModal({ isOpen, title, message, onConfirm, onCanc
             onClick={onConfirm}
             className="flex-1 py-3 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-sm transition-all active:scale-95 shadow-md shadow-rose-600/20"
           >
-            Exit Session
+            {confirmLabel}
           </button>
         </div>
 

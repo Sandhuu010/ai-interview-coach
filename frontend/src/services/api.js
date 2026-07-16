@@ -15,8 +15,8 @@ export const api = {
    * Initializes a new interview session.
    * POST /sessions
    */
-  createSession: async (topic) => {
-    const response = await client.post('/sessions', { topic });
+  createSession: async (topic, difficulty = 'Medium') => {
+    const response = await client.post('/sessions', { topic, difficulty });
     return response.data;
   },
 
@@ -62,6 +62,15 @@ export const api = {
    */
   getSessionDetails: async (sessionId) => {
     const response = await client.get(`/sessions/${sessionId}`);
+    return response.data;
+  },
+
+  /**
+   * Deletes a session and its associated questions.
+   * DELETE /sessions/{session_id}
+   */
+  deleteSession: async (sessionId) => {
+    const response = await client.delete(`/sessions/${sessionId}`);
     return response.data;
   },
 };

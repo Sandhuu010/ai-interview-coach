@@ -5,11 +5,14 @@ from pydantic import BaseModel, Field
 class SessionCreate(BaseModel):
     """Input payload to create a new session."""
     topic: str = Field(..., description="Topic of the session: 'Python', 'DSA', or 'HR'")
+    difficulty: Optional[str] = Field(default="Medium", description="Difficulty: 'Easy', 'Medium', or 'Hard'")
 
 class SessionResponse(BaseModel):
     """Output payload representing a basic session info."""
     id: int
     topic: str
+    difficulty: Optional[str] = None
+    question_count: int = 0
     created_at: datetime
     overall_score: Optional[float] = None
     summary: Optional[str] = None
@@ -49,6 +52,7 @@ class SessionDetailResponse(BaseModel):
     """Output payload containing a session and all its question details."""
     id: int
     topic: str
+    difficulty: Optional[str] = None
     created_at: datetime
     overall_score: Optional[float] = None
     summary: Optional[str] = None

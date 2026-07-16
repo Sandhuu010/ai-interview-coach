@@ -32,7 +32,7 @@ export default function ChatInput({ value, onChange, onSend, disabled, placehold
 
   return (
     <div className="border-t border-slate-800/80 bg-slate-900/60 p-4 sticky bottom-0 z-10 backdrop-blur-md">
-      <div className="max-w-3xl mx-auto flex items-end gap-3 bg-slate-950 border border-slate-800 focus-within:border-indigo-500 rounded-xl px-4 py-2.5 shadow-lg transition-colors">
+      <div className="max-w-4xl mx-auto flex items-end gap-3 bg-slate-950 border border-slate-800 focus-within:border-indigo-500 rounded-xl px-4 py-2.5 shadow-lg transition-colors">
         
         {/* Text Area */}
         <textarea
