@@ -56,6 +56,3 @@ This implementation plan details the task breakdown, estimated timeline, and spe
 
 ### Deliverable
 * Complete working AI Interview Coach.
-
-### Estimated Timeline
-* **Effort**: 6–8 hours.
