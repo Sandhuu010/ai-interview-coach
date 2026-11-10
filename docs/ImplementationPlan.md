@@ -1,5 +1,3 @@
-<<<<<<< HEAD
-=======
 # Implementation Plan: AI Interview Coach
 
 This implementation plan details the task breakdown, estimated timeline, and specific deliverables required to build the AI Interview Coach MVP.
@@ -37,7 +35,7 @@ This implementation plan details the task breakdown, estimated timeline, and spe
 * **Complete Session**:Mark the interview session as completed, generate a short summary, and save the final results.
 
 ### Deliverable
-* Working AI Interview Engine integrated with Gemini.
+* Working interview chatbot using Gemini.
 
 ### Estimated Timeline
 * **Effort**: 8–10 hours.
@@ -58,7 +56,3 @@ This implementation plan details the task breakdown, estimated timeline, and spe
 
 ### Deliverable
 * Complete working AI Interview Coach.
-
-### Estimated Timeline
-* **Effort**: 6–8 hours.
->>>>>>> f42d92f (Complete AI Interview Coach MVP)

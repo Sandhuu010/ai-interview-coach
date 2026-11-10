@@ -26,7 +26,7 @@ This document details the functional, non-functional, hardware, software, and de
 
 ### FR-4: AI Evaluation
 * **FR-4.1**: The backend must send the user's answer and the question to the Gemini API for evaluation.
-* **FR-4.2**:The backend evaluates the user's answer using the Gemini API and returns a structured response to the frontend containing:
+* **FR-4.2**:The backend extracts the evaluation returned by the Gemini API and sends a structured response to the frontend containing:
   * **score**: An integer between 0 and 100 representing the response quality.
   * **feedback**: A string containing qualitative assessment.
   * **improvement_suggestions**: A string listing actionable points.
@@ -58,7 +58,7 @@ This document details the functional, non-functional, hardware, software, and de
 
 ### NFR-2: Maintainability
 * **NFR-2.1**: The codebase must be separated into decoupled frontend (`/frontend`) and backend (`/backend`) directories.
-* **NFR-2.2**:Use Pydantic and SQLModel for data validation and database models.
+* **NFR-2.2**: Backend Python code must strictly follow **PEP 8** style guidelines and pass type validations via Pydantic/SQLModel.
 * **NFR-2.3**: React components must be modular, separating logical state hooks from visual representation.
 
 ### NFR-3: Scalability
@@ -107,8 +107,8 @@ This document details the functional, non-functional, hardware, software, and de
 | **Frontend** | React.js | UI framework; component-driven SPA for seamless state transitions. |
 | **Styling** | Tailwind CSS | Utility-first CSS framework for clean, responsive styling. |
 | **API Client** | Axios | Promise-based HTTP client for API communication. |
-| **Backend** | FastAPI |Modern Python web framework for building REST APIs. |
-| **ORM / DB Layer** | SQLModel |Integrates SQLalchemy and Pydantic for clean, type-safe database queries. |
+| **Backend** | FastAPI | High-performance, async-first Python web framework with auto-generated OpenAPI docs. |
+| **ORM / DB Layer** | SQLModel | Integrates SQLalchemy and Pydantic for clean, type-safe database queries. |
 | **Database** | SQLite | Lightweight, file-based relational database; requires zero configuration. |
 | **Data Validation** | Pydantic v2 | Python data validation and settings management using type hints. |
 | **AI LLM** | Gemini API | Cost-efficient, high-context LLM; accessed via official Google Gen AI SDK. |
