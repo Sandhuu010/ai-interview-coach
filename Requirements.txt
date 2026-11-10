@@ -1,0 +1,18 @@
+# Web Framework and Server
+fastapi>=0.111.0
+uvicorn>=0.30.1
+python-multipart>=0.0.9
+
+# Database and ORM
+sqlmodel>=0.0.19
+
+# Configuration & Validation
+pydantic>=2.9.0
+pydantic-settings>=2.5.0
+
+# AI Services
+google-genai>=0.1.1
+
+# Utilities
+python-dotenv>=1.0.1
+
